@@ -1,18 +1,18 @@
 {
-  "name": "naivecoin",
-  "version": "0.0.2",
-  "description": "Naivecoin, a cryptocurrency demonstration",
-  "homepage": "https://github.com/conradoqg/naivecoin",
+  "name": "pistischain",
+  "version": "0.0.1",
+  "description": "PistisChain, A decentralized student check-in system",
+  "homepage": "https://github.com/PistisChain",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/conradoqg/naivecoin.git"
+    "url": "https://github.com/PistisChain/backend"
   },
   "bin": {
-    "naivecoin": "bin/naivecoin.js"
+    "pistischain": "bin/pistischain.js"
   },
   "scripts": {
-    "start": "node bin/naivecoin.js",
+    "start": "node bin/pistischain.js",
     "compose:up": "docker-compose up",
     "coveralls": "nyc npm test && nyc report --reporter=text-lcov | coveralls",
     "coverage": "nyc --reporter=lcov --reporter=text --clean node node_modules/mocha/bin/_mocha -u bdd --colors test/",
@@ -24,9 +24,8 @@
     "cli-color": "^1.2.0",
     "elliptic": "^6.4.0",
     "es6-error": "^4.0.2",
-    "express": "^4.21.1",
+    "express": "^4.16.2",
     "fs-extra": "^5.0.0",
-    "mysql2": "^3.11.4",
     "pug": "^2.0.0-rc.4",
     "ramda": "^0.25.0",
     "statuses": "^1.3.1",

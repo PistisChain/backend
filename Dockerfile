@@ -1,9 +1,9 @@
 FROM node:6
 
-VOLUME /naivecoin
+VOLUME /pistischain
 
-WORKDIR /naivecoin
+WORKDIR /pistischain
 
-ENTRYPOINT node bin/naivecoin.js
+ENTRYPOINT node bin/pistischain.js
 
 EXPOSE 3001
