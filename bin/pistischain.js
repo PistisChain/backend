@@ -1,19 +1,150 @@
-#!/usr/bin/env node
-const pistischain = require('./../lib/pistischain');
+const HttpServer = require('../lib/httpServer/index.js');
+const Blockchain = require('../lib/blockchain/index.js');
+const Transaction = require('../lib/blockchain/transaction.js');
+const Operator = require('../lib/operator/index.js');
+const Miner = require('../lib/miner/index.js');
+const Node = require('../lib/node/index.js');
+const express = require('express');
+const detect = require('detect-port');
+const CryptoUtil = require('../lib/util/cryptoUtil.js');
+const cors = require('cors');
+const host = 'localhost';
+const runningMap = new Map();
+const runningSet = new Set();
+let peers = [];
 
-const argv = require('yargs')
-    .usage('Usage: $0 [options]')
-    .alias('a', 'host')
-    .describe('a', 'Host address. (localhost by default)')
-    .alias('p', 'port')
-    .describe('p', 'HTTP port. (3001 by default)')
-    .alias('l', 'log-level')
-    .describe('l', 'Log level (7=dir, debug, time and trace; 6=log and info; 4=warn; 3=error, assert; 6 by default).')
-    .describe('peers', 'Peers list.')
-    .describe('name', 'Node name/identifier.')
-    .array('peers')
-    .help('h')
-    .alias('h', 'help')
-    .argv;
+const app = express();
+app.use(cors());
 
-pistischain(argv.host, argv.port, argv.peers, argv.logLevel, argv.name);
+const BASE_PORT = 3001;
+let currentPort = BASE_PORT; // 当前可用的端口
+let isNodeRunning = false;    // 是否已有节点在运行
+
+// 解析 JSON 请求体
+app.use(express.json());
+
+// 检查端口是否被占用
+const isPortAvaliable = (port) => {
+    const availablePort = detect(port);
+    if (port === availablePort) {
+        return true;
+    } else {
+        return false;
+    }
+};
+
+// 登录 API：供学生登录
+app.post('/login', (req, res) => {
+    const { studentId, password } = req.body;
+    let blockchain = new Blockchain(studentId);
+    let standardChain;
+    if (isNodeRunning) {
+        const [firstId] = runningSet
+        standardChain = new Blockchain(firstId)
+    } else {
+        standardChain = blockchain
+    }
+    let blocks = standardChain.getAllBlocks();
+    let flag = 0;
+    for (const block of blocks) {
+        for (const transaction of block.transactions) {
+            if (transaction.type === 'register' && transaction.studentId === studentId && CryptoUtil.hash(password) !== transaction.passwordHash) {
+                return res.status(400).json({ error: '密码错误' });
+            } else if (transaction.type === 'register' && transaction.studentId === studentId && CryptoUtil.hash(password) === transaction.passwordHash) {
+                flag++;
+                break;
+            }
+        }
+        if (flag) break;
+    }
+    if (!flag) {
+        return res.status(400).json({ error: '未找到账号' });
+    }
+    if (isNodeRunning) {
+        peers = Array.from(runningMap.keys()).map(port => ({ url: `http://localhost:${port}` }));
+        if (runningSet.has(studentId)) {
+            return res.status(400).json({ error: 'this node is already running' });
+        }
+        console.log("peers:", peers);
+    }
+    // 查找可用端口
+    while (!isPortAvaliable(currentPort)) {
+        currentPort++;
+        break;
+    }
+    let operator = new Operator(studentId, blockchain);
+    let wallet = operator.getWallet();
+    let address = operator.getAddressForWallet(wallet.id);
+    let miner = new Miner(blockchain);
+    let node = new Node(host, currentPort, peers, blockchain);
+    let httpServer = new HttpServer(node, blockchain, operator, miner);
+    isNodeRunning = true;
+    lastStartedPort = currentPort; // 保存上一个启动的端口
+    httpServer.listen(host, currentPort);
+    runningMap.set(currentPort, httpServer);
+    runningSet.add(studentId);
+    return res.json({ status: 'success', port: currentPort, wallet: wallet, address: address });
+});
+
+app.post('/logout', async (req, res) => {
+    const stopPort = req.body.port;
+    const stopId = req.body.studentId;
+    const portNum = Number(stopPort);
+    const server = runningMap.get(portNum)
+    server?.stop()
+    runningMap.delete(portNum);
+    runningSet.delete(stopId);
+    console.log('port', portNum, 'closed');
+    if (!runningSet.size) {
+        isNodeRunning = false;
+    }
+    return res.json({ status: 'success', message: '已登出' });
+})
+
+
+app.post('/register', (req, res) => {
+    const { studentId, password } = req.body;
+    if (!studentId || !password) {
+        return res.status(400).json({ error: 'Missing studentId or password' });
+    }
+
+    let blockchain = new Blockchain(studentId);
+    let operator = new Operator(studentId, blockchain);
+    if (isNodeRunning) {
+        peers = Array.from(runningMap.keys()).map(port => ({ url: `http://localhost:${port}` }));
+        console.log("peers:", peers);
+        // return res.status(400).json({ error: 'Node already running', peers });
+    }
+
+    try {
+        // 查找可用端口
+        while (!isPortAvaliable(currentPort)) {
+            currentPort++;
+            break;
+        }
+        let miner = new Miner(blockchain);
+        let node = new Node(host, currentPort, peers, blockchain);
+        let httpServer = new HttpServer(node, blockchain, operator, miner);
+        isNodeRunning = true;
+        lastStartedPort = currentPort; // 保存上一个启动的端口
+        httpServer.listen(host, currentPort);
+        if (!operator.getWallets().length) {
+            let newWallet = operator.createWalletFromPassword(password);
+            let newAddress = operator.generateAddressForWallet(newWallet.id);
+            let newTransaction = operator.createRegister(newWallet.id, newAddress, 0, studentId, Date.now(), CryptoUtil.hash(password));
+            let transactionCreated = blockchain.addTransaction(Transaction.fromJson(newTransaction));
+            runningMap.set(currentPort, httpServer)
+            res.status(200).json({ message: 'Node started successfully', port: currentPort, wallet: newWallet, address: newAddress, transaction: transactionCreated });
+        } else {
+            return res.status(400).json({ error: '已注册过，请登录' });
+        }
+
+    } catch (error) {
+        console.error('Error starting node:', error);
+        return res.status(500).json({ error: 'Failed to start node' });
+    }
+});
+
+// 启动服务
+const PORT = process.env.PORT || 2888;
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
